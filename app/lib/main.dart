@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:light/light.dart';
+import 'package:noise_meter/noise_meter.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 void main() {
   runApp(
@@ -17,175 +20,200 @@ class PomodoroUI extends StatefulWidget {
 }
 
 class _PomodoroUIState extends State<PomodoroUI> {
-  // 配置常量
-  static const int workSeconds = 25 * 60; // 工作25分钟
-  static const int breakSeconds = 5 * 60; // 休息5分钟
+  // --- Configuration ---
+  int _workMinutes = 25;
+  int _breakMinutes = 5;
+  int _totalSessions = 4;
+  int _completedSessions = 0;
 
-  // 状态变量
-  int _totalSessions = 4; // 默认目标番茄数
-  int _completedSessions = 0; // 已完成番茄数
-  int _secondsRemaining = workSeconds;
-  bool _isWorking = true; // 当前是工作还是休息
+  late int _secondsRemaining;
+  bool _isWorking = true;
   bool _isRunning = false;
   Timer? _timer;
 
+  // --- Environment Monitoring & Thresholds ---
+  double _luxValue = 0;
+  double _dbValue = 0;
+  int _violationSeconds = 0;
+  bool _isEnvWarning = false;
+
+  static const double MIN_LUX = 300.0; // Recommended min light for studying
+  static const double MAX_DB = 60.0; // Recommended max noise for focusing
+
+  StreamSubscription? _lightSubscription;
+  StreamSubscription<NoiseReading>? _noiseSubscription;
+  NoiseMeter? _noiseMeter;
+
+  @override
+  void initState() {
+    super.initState();
+    _secondsRemaining = _workMinutes * 60;
+  }
+
+  // --- Environment Logic ---
+  Future<void> _startMonitoring() async {
+    var status = await Permission.microphone.request();
+    if (status.isGranted) {
+      _lightSubscription = Light().lightSensorStream.listen((lux) {
+        setState(() => _luxValue = lux.toDouble());
+      });
+
+      _noiseMeter = NoiseMeter();
+      _noiseSubscription = _noiseMeter?.noise.listen((reading) {
+        setState(() => _dbValue = reading.meanDecibel);
+      });
+    }
+  }
+
+  void _stopMonitoring() {
+    _lightSubscription?.cancel();
+    _noiseSubscription?.cancel();
+    _violationSeconds = 0;
+    _isEnvWarning = false;
+    setState(() {
+      _luxValue = 0;
+      _dbValue = 0;
+    });
+  }
+
+  void _checkEnvironment() {
+    // Only check during work sessions
+    if (!_isWorking) {
+      _isEnvWarning = false;
+      _violationSeconds = 0;
+      return;
+    }
+
+    bool badLight = _luxValue < MIN_LUX;
+    bool badNoise = _dbValue > MAX_DB;
+
+    if (badLight || badNoise) {
+      _violationSeconds++;
+      // Trigger warning after 3 consecutive seconds of poor environment
+      if (_violationSeconds >= 3) {
+        if (!_isEnvWarning) {
+          _isEnvWarning = true;
+          _showSnackBar("⚠️ Environment Poor: Focus may be affected!");
+        }
+      }
+    } else {
+      // Reset if environment becomes good
+      _violationSeconds = 0;
+      _isEnvWarning = false;
+    }
+  }
+
+  // --- Timer Controls ---
   void _toggleTimer() {
     if (_isRunning) {
       _timer?.cancel();
+      _stopMonitoring();
     } else {
       _timer = Timer.periodic(Duration(seconds: 1), (timer) {
+        if (!mounted) return;
         setState(() {
           if (_secondsRemaining > 0) {
             _secondsRemaining--;
+            _checkEnvironment();
           } else {
             _handleSessionEnd();
           }
         });
       });
+      _startMonitoring().catchError((e) => debugPrint("Sensor Error: $e"));
     }
     setState(() => _isRunning = !_isRunning);
   }
 
   void _handleSessionEnd() {
     _timer?.cancel();
+    _stopMonitoring();
     setState(() => _isRunning = false);
 
-    String message = "";
     if (_isWorking) {
       _completedSessions++;
       if (_completedSessions < _totalSessions) {
         _isWorking = false;
-        _secondsRemaining = breakSeconds;
-        message = "Well done! Take a break now.";
+        _secondsRemaining = _breakMinutes * 60;
+        _showSnackBar("Great job! Time for a break.");
       } else {
-        message = "Congratulations! You've completed all your goals!";
+        _showSnackBar("Goal Achieved! You're amazing!");
         _resetTimer();
-        // 提前 return 防止显示两次提示
-        Future.delayed(Duration.zero, () => _showSnackBar(message));
         return;
       }
     } else {
       _isWorking = true;
-      _secondsRemaining = workSeconds;
-      message = "Break finished, let's get back to work.";
+      _secondsRemaining = _workMinutes * 60;
+      _showSnackBar("Break over. Back to focus!");
     }
-
-    // 使用 Future.delayed 确保在下一帧显示 SnackBar，避开上下文冲突
-    Future.delayed(Duration.zero, () => _showSnackBar(message));
   }
 
   void _resetTimer() {
     _timer?.cancel();
+    _stopMonitoring();
     setState(() {
-      _secondsRemaining = workSeconds;
-      _completedSessions = 0;
       _isWorking = true;
+      _secondsRemaining = _workMinutes * 60;
+      _completedSessions = 0;
       _isRunning = false;
     });
   }
 
-  void _showSnackBar(String message) {
-    if (!mounted) return; // 如果组件已经销毁，就不执行
-
-    ScaffoldMessenger.of(context).clearSnackBars(); // 清除之前的提示
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        duration: Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating, // 悬浮样式在 Web 端更稳定
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
+  // --- UI Components ---
   @override
   Widget build(BuildContext context) {
-    // 计算当前进度
-    int total = _isWorking ? workSeconds : breakSeconds;
-    double progress = (_secondsRemaining) / total;
+    int total = _isWorking ? _workMinutes * 60 : _breakMinutes * 60;
+    double progress = _secondsRemaining / total;
 
     return Scaffold(
-      backgroundColor: Color(0xFF1A1A1A),
+      backgroundColor: Color(0xFF121212),
       body: SafeArea(
         child: Column(
           children: [
-            SizedBox(height: 40),
-            // 1. 目标设置区域
-            _buildSessionSetter(),
+            _buildTopSettings(),
+
+            // Persistent Warning Banner
+            if (_isEnvWarning)
+              Container(
+                width: double.infinity,
+                color: Colors.redAccent,
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  "SUBOPTIMAL ENVIRONMENT DETECTED",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+
+            if (_isRunning) _buildEnvPanel(),
 
             Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // 状态标签
                   Text(
-                    _isWorking ? "In concentration" : "On break",
+                    _isWorking ? "FOCUSING" : "RESTING",
                     style: TextStyle(
-                      fontSize: 24,
-                      color: _isWorking
-                          ? Colors.tealAccent
-                          : Colors.orangeAccent,
-                      letterSpacing: 2,
+                      fontSize: 18,
+                      letterSpacing: 5,
+                      color: _isEnvWarning
+                          ? Colors.redAccent
+                          : (_isWorking
+                                ? Colors.tealAccent
+                                : Colors.orangeAccent),
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   SizedBox(height: 30),
-
-                  // 2. 倒计时圆环
-                  Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      SizedBox(
-                        width: 260,
-                        height: 260,
-                        child: CircularProgressIndicator(
-                          value: progress,
-                          strokeWidth: 10,
-                          backgroundColor: Colors.white10,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            _isWorking
-                                ? Colors.tealAccent
-                                : Colors.orangeAccent,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        _formatTime(_secondsRemaining),
-                        style: TextStyle(
-                          fontSize: 64,
-                          fontWeight: FontWeight.w200,
-                        ),
-                      ),
-                    ],
-                  ),
-
+                  _buildCircularTimer(progress),
                   SizedBox(height: 40),
-                  // 3. 进度指示（小圆点）
                   _buildProgressDots(),
-
-                  SizedBox(height: 60),
-                  // 4. 控制按钮
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _buildActionButton(
-                        onTap: _toggleTimer,
-                        icon: _isRunning ? Icons.pause : Icons.play_arrow,
-                        color: _isRunning ? Colors.white : Colors.tealAccent,
-                      ),
-                      SizedBox(width: 40),
-                      _buildActionButton(
-                        onTap: _resetTimer,
-                        icon: Icons.refresh,
-                        color: Colors.white54,
-                      ),
-                    ],
-                  ),
+                  SizedBox(height: 50),
+                  _buildControlButtons(),
                 ],
               ),
             ),
@@ -195,88 +223,210 @@ class _PomodoroUIState extends State<PomodoroUI> {
     );
   }
 
-  // 构建顶部轮次选择器
-  Widget _buildSessionSetter() {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 30),
+  Widget _buildEnvPanel() {
+    bool lightAlert = _luxValue < MIN_LUX;
+    bool noiseAlert = _dbValue > MAX_DB;
+
+    return Container(
+      margin: EdgeInsets.symmetric(horizontal: 25, vertical: 10),
+      padding: EdgeInsets.symmetric(vertical: 15),
+      decoration: BoxDecoration(
+        color: _isEnvWarning
+            ? Colors.red.withOpacity(0.15)
+            : Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(15),
+        border: _isEnvWarning
+            ? Border.all(color: Colors.redAccent.withOpacity(0.5))
+            : null,
+      ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          Text("Target Round:", style: TextStyle(color: Colors.white70)),
-          Row(
-            children: [
-              IconButton(
-                icon: Icon(Icons.remove_circle_outline),
-                onPressed: _isRunning
-                    ? null
-                    : () {
-                        if (_totalSessions > 1)
-                          setState(() => _totalSessions--);
-                      },
-              ),
-              Text(
-                "$_totalSessions",
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              IconButton(
-                icon: Icon(Icons.add_circle_outline),
-                onPressed: _isRunning
-                    ? null
-                    : () {
-                        if (_totalSessions < 10)
-                          setState(() => _totalSessions++);
-                      },
-              ),
-            ],
+          _envInfo(
+            Icons.light_mode,
+            "${_luxValue.toInt()} lx",
+            "Min 300",
+            lightAlert,
+          ),
+          _envInfo(
+            Icons.volume_up,
+            "${_dbValue.toInt()} dB",
+            "Max 60",
+            noiseAlert,
           ),
         ],
       ),
     );
   }
 
-  // 构建底部的进度圆点
-  Widget _buildProgressDots() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(_totalSessions, (index) {
-        return Container(
-          margin: EdgeInsets.symmetric(horizontal: 5),
-          width: 12,
-          height: 12,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: index < _completedSessions
-                ? Colors.tealAccent
-                : Colors.white10,
-            border: Border.all(color: Colors.white24),
+  Widget _envInfo(IconData icon, String value, String label, bool isBad) {
+    return Column(
+      children: [
+        Icon(icon, size: 18, color: isBad ? Colors.redAccent : Colors.white38),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: isBad ? Colors.redAccent : Colors.white,
           ),
-        );
-      }),
+        ),
+        Text(label, style: TextStyle(fontSize: 10, color: Colors.white24)),
+      ],
     );
   }
 
-  String _formatTime(int seconds) {
-    int m = seconds ~/ 60;
-    int s = seconds % 60;
-    return "${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}";
+  Widget _buildCircularTimer(double progress) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        SizedBox(
+          width: 260,
+          height: 260,
+          child: CircularProgressIndicator(
+            value: progress,
+            strokeWidth: 4,
+            backgroundColor: Colors.white10,
+            valueColor: AlwaysStoppedAnimation<Color>(
+              _isEnvWarning
+                  ? Colors.redAccent
+                  : (_isWorking ? Colors.tealAccent : Colors.orangeAccent),
+            ),
+          ),
+        ),
+        Text(
+          _formatTime(_secondsRemaining),
+          style: TextStyle(fontSize: 64, fontWeight: FontWeight.w100),
+        ),
+      ],
+    );
   }
 
-  Widget _buildActionButton({
-    required VoidCallback onTap,
-    required IconData icon,
-    required Color color,
-  }) {
+  Widget _buildTopSettings() {
+    return Container(
+      padding: EdgeInsets.all(20),
+      child: Column(
+        children: [
+          _settingRow(
+            "Rounds",
+            "$_totalSessions",
+            (d) => setState(
+              () => _totalSessions = (_totalSessions + d).clamp(1, 10),
+            ),
+          ),
+          _settingRow("Work Min", "$_workMinutes", (d) => _adjustTime(true, d)),
+          _settingRow(
+            "Break Min",
+            "$_breakMinutes",
+            (d) => _adjustTime(false, d),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _settingRow(String label, String value, Function(int) onStep) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: TextStyle(color: Colors.white54)),
+        Row(
+          children: [
+            IconButton(
+              icon: Icon(Icons.remove, size: 20),
+              onPressed: _isRunning ? null : () => onStep(-1),
+            ),
+            Text(
+              value,
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            IconButton(
+              icon: Icon(Icons.add, size: 20),
+              onPressed: _isRunning ? null : () => onStep(1),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  void _adjustTime(bool isWork, int delta) {
+    setState(() {
+      if (isWork) {
+        _workMinutes = (_workMinutes + delta).clamp(1, 60);
+        if (_isWorking) _secondsRemaining = _workMinutes * 60;
+      } else {
+        _breakMinutes = (_breakMinutes + delta).clamp(1, 30);
+        if (!_isWorking) _secondsRemaining = _breakMinutes * 60;
+      }
+    });
+  }
+
+  Widget _buildProgressDots() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(
+        _totalSessions,
+        (i) => Container(
+          margin: EdgeInsets.symmetric(horizontal: 4),
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: i < _completedSessions ? Colors.tealAccent : Colors.white10,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildControlButtons() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _actionBtn(
+          _toggleTimer,
+          _isRunning ? Icons.pause : Icons.play_arrow,
+          _isRunning ? Colors.white : Colors.tealAccent,
+        ),
+        SizedBox(width: 40),
+        _actionBtn(_resetTimer, Icons.refresh, Colors.white38),
+      ],
+    );
+  }
+
+  Widget _actionBtn(VoidCallback onTap, IconData icon, Color color) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: EdgeInsets.all(16),
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: color.withOpacity(0.1),
           border: Border.all(color: color.withOpacity(0.5)),
         ),
-        child: Icon(icon, color: color, size: 36),
+        child: Icon(icon, color: color, size: 32),
       ),
     );
+  }
+
+  void _showSnackBar(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        behavior: SnackBarBehavior.floating,
+        duration: Duration(seconds: 3),
+      ),
+    );
+  }
+
+  String _formatTime(int sec) {
+    return "${(sec ~/ 60).toString().padLeft(2, '0')}:${(sec % 60).toString().padLeft(2, '0')}";
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _stopMonitoring();
+    super.dispose();
   }
 }

@@ -34,6 +34,10 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+  # 传感器与权限相关
+  light: ^5.0.0        # 光线传感器
+  noise_meter: ^5.1.0  # 噪音监测
+  permission_handler: ^12.0.1 # 权限申请
 
 dev_dependencies:
   flutter_test:
