@@ -11,22 +11,18 @@ void main() {
     MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF0F172A), // 星空背景色
+        scaffoldBackgroundColor: const Color(0xFF0F172A),
       ),
       home: SplashScreen(),
     ),
   );
 }
 
-// ==========================================
-// 数据模型与状态枚举
-// ==========================================
 class EnvRecord {
   final int second;
   final double lux;
   final double db;
   final bool isOptimal;
-
   EnvRecord({
     required this.second,
     required this.lux,
@@ -35,15 +31,8 @@ class EnvRecord {
   });
 }
 
-enum FocusCoreState {
-  workOptimal, // 工作中：环境健康（充能成功）
-  workSuboptimal, // 工作中：环境恶劣（能量危机！）
-  breakNormal, // 休息中（稳定状态）
-}
+enum FocusCoreState { workOptimal, workSuboptimal, breakNormal }
 
-// ==========================================
-// 1. 启动引导页 (Splash Screen)
-// ==========================================
 class SplashScreen extends StatefulWidget {
   @override
   _SplashScreenState createState() => _SplashScreenState();
@@ -75,7 +64,7 @@ class _SplashScreenState extends State<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: const [
-            Icon(Icons.public, size: 80, color: Colors.cyanAccent), // 贴合星球主题
+            Icon(Icons.public, size: 80, color: Colors.cyanAccent),
             SizedBox(height: 20),
             Text(
               "Focus Sphere",
@@ -100,16 +89,13 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 }
 
-// ==========================================
-// 2. 主界面 (Pomodoro UI)
-// ==========================================
 class PomodoroUI extends StatefulWidget {
   @override
   _PomodoroUIState createState() => _PomodoroUIState();
 }
 
 class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
-  // --- 基础配置 ---
+  // --- 基础配置 (已还原您可以修改的设置) ---
   int _workMinutes = 25;
   int _breakMinutes = 5;
   int _totalSessions = 4;
@@ -132,7 +118,6 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
   StreamSubscription<NoiseReading>? _noiseSubscription;
   NoiseMeter? _noiseMeter;
 
-  // --- 历史数据存储 ---
   List<EnvRecord> _currentSessionHistory = [];
 
   // --- 动画控制器 ---
@@ -146,7 +131,6 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
     super.initState();
     _secondsRemaining = _workMinutes * 60;
 
-    // 呼吸动画
     _breathingController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
@@ -168,7 +152,6 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
       ),
     ]).animate(_breathingController);
 
-    // 旋转与闪烁动画
     _rotationController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 5),
@@ -179,7 +162,6 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
     );
   }
 
-  // --- 叙事状态机 ---
   FocusCoreState get _currentCoreState {
     if (!_isWorking) return FocusCoreState.breakNormal;
     if (_isEnvWarning) return FocusCoreState.workSuboptimal;
@@ -218,7 +200,6 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
     }
   }
 
-  // --- 核心功能方法 ---
   Future<void> _startMonitoring() async {
     var status = await Permission.microphone.request();
     if (status.isGranted) {
@@ -256,7 +237,6 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
     bool badNoise = _dbValue > MAX_DB;
     bool isOptimal = !badLight && !badNoise;
 
-    // 记录历史数据
     int secondsElapsed = (_workMinutes * 60) - _secondsRemaining;
     _currentSessionHistory.add(
       EnvRecord(
@@ -272,9 +252,6 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
       if (_violationSeconds >= 3 && !_isEnvWarning) {
         setState(() => _isEnvWarning = true);
         _updateCoreNarrativeExperience();
-        _showSnackBar(
-          "⚠️ Environmental Energy Crisis! High noise or low light.",
-        );
       }
     } else {
       _violationSeconds = 0;
@@ -372,7 +349,112 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  // --- UI 构建 ---
+  // ==========================================
+  // 【新增】还原：弹出式设置面板
+  // ==========================================
+  void _showSettingsSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E3C72),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setModalState) {
+            return Padding(
+              padding: const EdgeInsets.all(25.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    "Focus Settings",
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  _buildSettingRow("Work Time (min)", _workMinutes, (val) {
+                    setModalState(() => _workMinutes = val);
+                    setState(() {
+                      _workMinutes = val;
+                      if (!_isRunning && _isWorking)
+                        _secondsRemaining = _workMinutes * 60;
+                    });
+                  }),
+                  _buildSettingRow("Break Time (min)", _breakMinutes, (val) {
+                    setModalState(() => _breakMinutes = val);
+                    setState(() {
+                      _breakMinutes = val;
+                      if (!_isRunning && !_isWorking)
+                        _secondsRemaining = _breakMinutes * 60;
+                    });
+                  }),
+                  _buildSettingRow("Total Sessions", _totalSessions, (val) {
+                    setModalState(() => _totalSessions = val);
+                    setState(() => _totalSessions = val);
+                  }),
+                  const SizedBox(height: 10),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildSettingRow(String label, int value, Function(int) onChanged) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(fontSize: 16, color: Colors.white70),
+          ),
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(
+                  Icons.remove_circle_outline,
+                  color: Colors.cyanAccent,
+                ),
+                onPressed: () => onChanged(math.max(1, value - 1)), // 防止设为负数或0
+              ),
+              SizedBox(
+                width: 30,
+                child: Center(
+                  child: Text(
+                    '$value',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(
+                  Icons.add_circle_outline,
+                  color: Colors.cyanAccent,
+                ),
+                onPressed: () => onChanged(value + 1),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==========================================
+  // UI 构建
+  // ==========================================
   @override
   Widget build(BuildContext context) {
     double total = _isWorking ? _workMinutes * 60 : _breakMinutes * 60;
@@ -383,6 +465,11 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.settings, color: Colors.white70), // 【新增】设置按钮
+          tooltip: "Adjust Times",
+          onPressed: _showSettingsSheet,
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.analytics, color: Colors.cyanAccent),
@@ -409,6 +496,7 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
       body: SafeArea(
         child: Column(
           children: [
+            // 进度圆环区域
             Expanded(
               child: Stack(
                 alignment: Alignment.center,
@@ -481,10 +569,68 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
                 ],
               ),
             ),
+
+            // 【新增】还原：实时传感器数据展示
+            _buildRealTimeSensors(),
+            const SizedBox(height: 30),
+
+            // 控制按钮
             _buildControlButtons(),
             const SizedBox(height: 30),
           ],
         ),
+      ),
+    );
+  }
+
+  // 【新增】实时传感器数据显示挂件
+  Widget _buildRealTimeSensors() {
+    bool lightWarning = _luxValue < MIN_LUX && _isWorking && _isRunning;
+    bool noiseWarning = _dbValue > MAX_DB && _isWorking && _isRunning;
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _sensorBadge(Icons.light_mode, "${_luxValue.toInt()} lx", lightWarning),
+        const SizedBox(width: 20),
+        _sensorBadge(Icons.volume_up, "${_dbValue.toInt()} dB", noiseWarning),
+      ],
+    );
+  }
+
+  // 传感器胶囊 UI
+  Widget _sensorBadge(IconData icon, String value, bool isWarning) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: isWarning
+            ? Colors.redAccent.withOpacity(0.2)
+            : Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isWarning
+              ? Colors.redAccent.withOpacity(0.8)
+              : Colors.transparent,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            size: 18,
+            color: isWarning ? Colors.redAccent : Colors.cyanAccent,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: isWarning ? Colors.redAccent : Colors.white,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -541,9 +687,6 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
   }
 }
 
-// ==========================================
-// 3. 高级自定义绘图 (CustomPainter)
-// ==========================================
 class FocusPlanetCorePainter extends CustomPainter {
   final double progress;
   final Color mainColor;
@@ -620,9 +763,6 @@ class FocusPlanetCorePainter extends CustomPainter {
   }
 }
 
-// ==========================================
-// 4. 传感器历史数据页面
-// ==========================================
 class SensorHistoryPage extends StatelessWidget {
   final List<EnvRecord> historyData;
   final double minLux;
