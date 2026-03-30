@@ -8,7 +8,6 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-// 【修改】将全局常量提取出来，方便图表页面也能使用
 const double MIN_LUX = 300.0;
 const double MAX_DB = 60.0;
 
@@ -298,15 +297,12 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
     double totalDb = 0;
     int optimalCount = 0;
 
-    // 【新增】将每一秒的数据转换为 Firebase 可以存储的 Map 列表
     List<Map<String, dynamic>> rawDataList = [];
 
     for (var record in _currentSessionHistory) {
       totalLux += record.lux;
       totalDb += record.db;
       if (record.isOptimal) optimalCount++;
-
-      // 收集图表所需的原始坐标数据
       rawDataList.add({
         'second': record.second,
         'lux': record.lux,
@@ -327,7 +323,7 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
         'avgLux': avgLux,
         'avgDb': avgDb,
         'optimalPercentage': optimalPercentage,
-        'rawHistory': rawDataList, // 【新增】将画折线图的数据也传上云端
+        'rawHistory': rawDataList,
       });
       debugPrint("Data successfully uploaded to Firebase!");
     } catch (e) {
@@ -793,9 +789,6 @@ class FocusPlanetCorePainter extends CustomPainter {
   }
 }
 
-// ==========================================
-// 历史图表页面：复用代码展示云端拉取的详情
-// ==========================================
 class SensorHistoryPage extends StatelessWidget {
   final List<EnvRecord> historyData;
   final double minLux;
@@ -926,7 +919,7 @@ class SensorHistoryPage extends StatelessWidget {
   }
 
   LineChartData _buildChartData(bool isLight) {
-    if (historyData.isEmpty) return LineChartData(); // 防御空数据
+    if (historyData.isEmpty) return LineChartData();
     List<FlSpot> spots = historyData
         .map((d) => FlSpot(d.second.toDouble(), isLight ? d.lux : d.db))
         .toList();
@@ -975,10 +968,68 @@ class SensorHistoryPage extends StatelessWidget {
   }
 }
 
-// ==========================================
-// 云端历史记录页面
-// ==========================================
 class CloudHistoryPage extends StatelessWidget {
+  Future<void> _clearAllHistory(BuildContext context) async {
+    try {
+      var collection = FirebaseFirestore.instance.collection('focus_sessions');
+      var snapshots = await collection.get();
+
+      for (var doc in snapshots.docs) {
+        await doc.reference.delete();
+      }
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("All cloud history cleared!"),
+            backgroundColor: Colors.cyanAccent,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint("Error clearing history: $e");
+    }
+  }
+
+  void _showClearConfirmDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E3C72),
+        title: const Text(
+          "Clear History?",
+          style: TextStyle(color: Colors.white),
+        ),
+        content: const Text(
+          "This will permanently delete all your focus sessions from the cloud. Are you sure?",
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              "CANCEL",
+              style: TextStyle(color: Colors.white54),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _clearAllHistory(context);
+            },
+            child: const Text(
+              "CLEAR ALL",
+              style: TextStyle(
+                color: Colors.redAccent,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -986,11 +1037,13 @@ class CloudHistoryPage extends StatelessWidget {
       appBar: AppBar(
         title: const Text("Cloud Session History"),
         backgroundColor: const Color(0xFF1E3C72),
-        actions: const [
-          Padding(
-            padding: EdgeInsets.only(right: 16.0),
-            child: Icon(Icons.cloud_done, color: Colors.cyanAccent),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.delete_sweep, color: Colors.redAccent),
+            tooltip: "Clear All History",
+            onPressed: () => _showClearConfirmDialog(context),
           ),
+          const SizedBox(width: 8),
         ],
       ),
       body: StreamBuilder<QuerySnapshot>(
@@ -1045,13 +1098,10 @@ class CloudHistoryPage extends StatelessWidget {
                   ? Colors.cyanAccent
                   : (optimalPct > 50 ? Colors.orangeAccent : Colors.redAccent);
 
-              // 【修改】添加 GestureDetector，让卡片可点击
               return GestureDetector(
                 onTap: () {
-                  // 判断这条记录里有没有包含图表所需的原始数据（兼容您旧的测试数据）
                   if (data['rawHistory'] != null) {
                     List<dynamic> rawList = data['rawHistory'];
-                    // 把云端的动态列表还原成我们的 EnvRecord 对象列表
                     List<EnvRecord> historyList = rawList
                         .map(
                           (e) => EnvRecord(
@@ -1063,7 +1113,6 @@ class CloudHistoryPage extends StatelessWidget {
                         )
                         .toList();
 
-                    // 跳转到图表详情页，并把云端的数据传过去
                     Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -1075,7 +1124,6 @@ class CloudHistoryPage extends StatelessWidget {
                       ),
                     );
                   } else {
-                    // 如果点击的是我们修改代码前测试的老数据（没有 rawHistory），则提示用户
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text(
@@ -1178,7 +1226,6 @@ class CloudHistoryPage extends StatelessWidget {
                           ],
                         ),
                       ),
-                      // 在卡片最右侧加一个箭头，提示用户这是可以点击的
                       const Icon(Icons.chevron_right, color: Colors.white38),
                     ],
                   ),
