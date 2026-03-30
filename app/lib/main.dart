@@ -1,25 +1,25 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:light/light.dart';
 import 'package:noise_meter/noise_meter.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:fl_chart/fl_chart.dart'; // 新增图表库
+import 'package:fl_chart/fl_chart.dart';
 
 void main() {
   runApp(
     MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: Color(0xFF121212),
+        scaffoldBackgroundColor: const Color(0xFF0F172A), // 星空背景色
       ),
-      // 将首页改为启动引导页
       home: SplashScreen(),
     ),
   );
 }
 
 // ==========================================
-// 数据模型：用于存储每秒的环境数据
+// 数据模型与状态枚举
 // ==========================================
 class EnvRecord {
   final int second;
@@ -35,6 +35,12 @@ class EnvRecord {
   });
 }
 
+enum FocusCoreState {
+  workOptimal, // 工作中：环境健康（充能成功）
+  workSuboptimal, // 工作中：环境恶劣（能量危机！）
+  breakNormal, // 休息中（稳定状态）
+}
+
 // ==========================================
 // 1. 启动引导页 (Splash Screen)
 // ==========================================
@@ -47,8 +53,7 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    // 2.5秒后跳转到主界面
-    Timer(Duration(milliseconds: 2500), () {
+    Timer(const Duration(milliseconds: 2500), () {
       Navigator.of(
         context,
       ).pushReplacement(MaterialPageRoute(builder: (context) => PomodoroUI()));
@@ -60,17 +65,17 @@ class _SplashScreenState extends State<SplashScreen> {
     return Scaffold(
       body: Container(
         width: double.infinity,
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF121212), Color(0xFF1E3C72)],
+            colors: [Color(0xFF0F172A), Color(0xFF1E3C72)],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.hourglass_empty, size: 80, color: Colors.tealAccent),
+          children: const [
+            Icon(Icons.public, size: 80, color: Colors.cyanAccent), // 贴合星球主题
             SizedBox(height: 20),
             Text(
               "Focus Sphere",
@@ -87,7 +92,7 @@ class _SplashScreenState extends State<SplashScreen> {
               style: TextStyle(fontSize: 16, color: Colors.white70),
             ),
             SizedBox(height: 50),
-            CircularProgressIndicator(color: Colors.tealAccent),
+            CircularProgressIndicator(color: Colors.cyanAccent),
           ],
         ),
       ),
@@ -103,8 +108,8 @@ class PomodoroUI extends StatefulWidget {
   _PomodoroUIState createState() => _PomodoroUIState();
 }
 
-class _PomodoroUIState extends State<PomodoroUI> {
-  // --- Configuration ---
+class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
+  // --- 基础配置 ---
   int _workMinutes = 25;
   int _breakMinutes = 5;
   int _totalSessions = 4;
@@ -115,12 +120,11 @@ class _PomodoroUIState extends State<PomodoroUI> {
   bool _isRunning = false;
   Timer? _timer;
 
-  // --- Environment Monitoring & Thresholds ---
+  // --- 传感器监测 ---
   double _luxValue = 0;
   double _dbValue = 0;
   int _violationSeconds = 0;
   bool _isEnvWarning = false;
-
   static const double MIN_LUX = 300.0;
   static const double MAX_DB = 60.0;
 
@@ -131,19 +135,96 @@ class _PomodoroUIState extends State<PomodoroUI> {
   // --- 历史数据存储 ---
   List<EnvRecord> _currentSessionHistory = [];
 
+  // --- 动画控制器 ---
+  late AnimationController _breathingController;
+  late Animation<double> _breathingAnimation;
+  late AnimationController _rotationController;
+  late AnimationController _warningFlickerController;
+
   @override
   void initState() {
     super.initState();
     _secondsRemaining = _workMinutes * 60;
+
+    // 呼吸动画
+    _breathingController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    );
+    _breathingAnimation = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(
+          begin: 1.0,
+          end: 1.05,
+        ).chain(CurveTween(curve: Curves.easeInOut)),
+        weight: 50,
+      ),
+      TweenSequenceItem(
+        tween: Tween(
+          begin: 1.05,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.easeInOut)),
+        weight: 50,
+      ),
+    ]).animate(_breathingController);
+
+    // 旋转与闪烁动画
+    _rotationController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 5),
+    );
+    _warningFlickerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
   }
 
+  // --- 叙事状态机 ---
+  FocusCoreState get _currentCoreState {
+    if (!_isWorking) return FocusCoreState.breakNormal;
+    if (_isEnvWarning) return FocusCoreState.workSuboptimal;
+    return FocusCoreState.workOptimal;
+  }
+
+  void _updateCoreNarrativeExperience() {
+    if (!_isRunning) {
+      _rotationController.stop();
+      _breathingController.stop();
+      _warningFlickerController.stop();
+      return;
+    }
+    switch (_currentCoreState) {
+      case FocusCoreState.workOptimal:
+        _rotationController.duration = const Duration(seconds: 5);
+        _rotationController.repeat();
+        _breathingController.duration = const Duration(seconds: 2);
+        _breathingController.repeat();
+        _warningFlickerController.reset();
+        break;
+      case FocusCoreState.workSuboptimal:
+        _rotationController.duration = const Duration(seconds: 2);
+        _rotationController.repeat();
+        _breathingController.duration = const Duration(seconds: 1);
+        _breathingController.repeat();
+        _warningFlickerController.repeat(reverse: true);
+        break;
+      case FocusCoreState.breakNormal:
+        _rotationController.duration = const Duration(seconds: 10);
+        _rotationController.repeat();
+        _breathingController.duration = const Duration(seconds: 4);
+        _breathingController.repeat();
+        _warningFlickerController.reset();
+        break;
+    }
+  }
+
+  // --- 核心功能方法 ---
   Future<void> _startMonitoring() async {
     var status = await Permission.microphone.request();
     if (status.isGranted) {
       _lightSubscription = Light().lightSensorStream.listen((lux) {
         if (mounted) setState(() => _luxValue = lux.toDouble());
       });
-
       _noiseMeter = NoiseMeter();
       _noiseSubscription = _noiseMeter?.noise.listen((reading) {
         if (mounted) setState(() => _dbValue = reading.meanDecibel);
@@ -155,9 +236,9 @@ class _PomodoroUIState extends State<PomodoroUI> {
     _lightSubscription?.cancel();
     _noiseSubscription?.cancel();
     _violationSeconds = 0;
-    _isEnvWarning = false;
     if (mounted) {
       setState(() {
+        _isEnvWarning = false;
         _luxValue = 0;
         _dbValue = 0;
       });
@@ -186,45 +267,47 @@ class _PomodoroUIState extends State<PomodoroUI> {
       ),
     );
 
-    // 警告逻辑
     if (badLight || badNoise) {
       _violationSeconds++;
-      if (_violationSeconds >= 3) {
-        if (!_isEnvWarning) {
-          _isEnvWarning = true;
-          _showSnackBar("⚠️ Environment Poor: Focus may be affected!");
-        }
+      if (_violationSeconds >= 3 && !_isEnvWarning) {
+        setState(() => _isEnvWarning = true);
+        _updateCoreNarrativeExperience();
+        _showSnackBar(
+          "⚠️ Environmental Energy Crisis! High noise or low light.",
+        );
       }
     } else {
       _violationSeconds = 0;
-      _isEnvWarning = false;
+      if (_isEnvWarning) {
+        setState(() => _isEnvWarning = false);
+        _updateCoreNarrativeExperience();
+      }
     }
   }
 
   void _toggleTimer() {
+    setState(() => _isRunning = !_isRunning);
     if (_isRunning) {
-      _timer?.cancel();
-      _stopMonitoring();
-    } else {
-      // 每次重新开始专注时，清空历史记录（如果您希望暂停后继续，可以去掉这一行）
       if (_secondsRemaining == _workMinutes * 60 && _isWorking) {
         _currentSessionHistory.clear();
       }
-
-      _timer = Timer.periodic(Duration(seconds: 1), (timer) {
+      _startMonitoring();
+      _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
         if (!mounted) return;
         setState(() {
           if (_secondsRemaining > 0) {
             _secondsRemaining--;
-            _checkAndRecordEnvironment(); // 更新并记录
+            _checkAndRecordEnvironment();
           } else {
             _handleSessionEnd();
           }
         });
       });
-      _startMonitoring().catchError((e) => debugPrint("Sensor Error: $e"));
+    } else {
+      _timer?.cancel();
+      _stopMonitoring();
     }
-    setState(() => _isRunning = !_isRunning);
+    _updateCoreNarrativeExperience();
   }
 
   void _handleSessionEnd() {
@@ -237,18 +320,19 @@ class _PomodoroUIState extends State<PomodoroUI> {
       if (_completedSessions < _totalSessions) {
         _isWorking = false;
         _secondsRemaining = _breakMinutes * 60;
-        _showSnackBar("Great job! Time for a break.");
+        _showSnackBar("Planet Core Charged! Time for a break.");
       } else {
-        _showSnackBar("Goal Achieved! You're amazing!");
+        _showSnackBar("Goal Achieved! Core fully powered!");
         _resetTimer();
         return;
       }
     } else {
       _isWorking = true;
       _secondsRemaining = _workMinutes * 60;
-      _currentSessionHistory.clear(); // 新专注周期清空记录
-      _showSnackBar("Break over. Back to focus!");
+      _currentSessionHistory.clear();
+      _showSnackBar("Break over. Back to charging the core!");
     }
+    _updateCoreNarrativeExperience();
   }
 
   void _resetTimer() {
@@ -261,6 +345,7 @@ class _PomodoroUIState extends State<PomodoroUI> {
       _isRunning = false;
       _currentSessionHistory.clear();
     });
+    _updateCoreNarrativeExperience();
   }
 
   void _showSnackBar(String msg) {
@@ -268,30 +353,39 @@ class _PomodoroUIState extends State<PomodoroUI> {
       SnackBar(
         content: Text(msg),
         behavior: SnackBarBehavior.floating,
-        duration: Duration(seconds: 3),
+        duration: const Duration(seconds: 3),
       ),
     );
   }
 
-  // ... [此处保留您原有的 UI Components，如 _buildTopSettings, _settingRow, _adjustTime 等] ...
-
-  // 为了缩短代码长度，这里省略了您之前写过的 _buildTopSettings 等无需改动的辅助 UI 方法，
-  // 我们重点修改 build 方法以加入“查看历史”按钮
+  String _formatTime(int sec) {
+    return "${(sec ~/ 60).toString().padLeft(2, '0')}:${(sec % 60).toString().padLeft(2, '0')}";
+  }
 
   @override
+  void dispose() {
+    _timer?.cancel();
+    _stopMonitoring();
+    _breathingController.dispose();
+    _rotationController.dispose();
+    _warningFlickerController.dispose();
+    super.dispose();
+  }
+
+  // --- UI 构建 ---
+  @override
   Widget build(BuildContext context) {
-    int total = _isWorking ? _workMinutes * 60 : _breakMinutes * 60;
-    double progress = _secondsRemaining / total;
+    double total = _isWorking ? _workMinutes * 60 : _breakMinutes * 60;
+    double progress = total > 0 ? (_secondsRemaining / total) : 0;
 
     return Scaffold(
-      backgroundColor: Color(0xFF121212),
+      backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
-          // 查看历史数据按钮
           IconButton(
-            icon: Icon(Icons.analytics, color: Colors.tealAccent),
+            icon: const Icon(Icons.analytics, color: Colors.cyanAccent),
             tooltip: "View Session History",
             onPressed: () {
               if (_currentSessionHistory.isEmpty) {
@@ -315,132 +409,106 @@ class _PomodoroUIState extends State<PomodoroUI> {
       body: SafeArea(
         child: Column(
           children: [
-            // Persistent Warning Banner
-            if (_isEnvWarning)
-              Container(
-                width: double.infinity,
-                color: Colors.redAccent,
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  "SUBOPTIMAL ENVIRONMENT DETECTED",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-
-            if (_isRunning) _buildEnvPanel(),
-
             Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+              child: Stack(
+                alignment: Alignment.center,
                 children: [
-                  Text(
-                    _isWorking ? "FOCUSING" : "RESTING",
-                    style: TextStyle(
-                      fontSize: 18,
-                      letterSpacing: 5,
-                      color: _isEnvWarning
-                          ? Colors.redAccent
-                          : (_isWorking
-                                ? Colors.tealAccent
-                                : Colors.orangeAccent),
-                      fontWeight: FontWeight.bold,
+                  AnimatedContainer(
+                    duration: const Duration(seconds: 2),
+                    width: 350,
+                    height: 350,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: _getNarrativeMainColor().withOpacity(
+                            _isEnvWarning ? 0.2 : 0.08,
+                          ),
+                          blurRadius: 100,
+                          spreadRadius: _isEnvWarning ? 10 : 0,
+                        ),
+                      ],
                     ),
                   ),
-                  SizedBox(height: 30),
-                  _buildCircularTimer(progress),
-                  SizedBox(height: 40),
-                  _buildControlButtons(),
+                  ScaleTransition(
+                    scale: _breathingAnimation,
+                    child: RotationTransition(
+                      turns: _rotationController,
+                      child: Container(
+                        width: 280,
+                        height: 280,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.05),
+                          ),
+                        ),
+                        child: CustomPaint(
+                          painter: FocusPlanetCorePainter(
+                            progress: progress,
+                            mainColor: _getNarrativeMainColor(),
+                            state: _currentCoreState,
+                            warningFlickerValue:
+                                _warningFlickerController.value,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _getNarrativeStatusText(),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          letterSpacing: 3,
+                          color: Colors.white60,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        _formatTime(_secondsRemaining),
+                        style: const TextStyle(
+                          fontSize: 60,
+                          fontWeight: FontWeight.w100,
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
+            _buildControlButtons(),
+            const SizedBox(height: 30),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildEnvPanel() {
-    bool lightAlert = _luxValue < MIN_LUX;
-    bool noiseAlert = _dbValue > MAX_DB;
-
-    return Container(
-      margin: EdgeInsets.symmetric(horizontal: 25, vertical: 10),
-      padding: EdgeInsets.symmetric(vertical: 15),
-      decoration: BoxDecoration(
-        color: _isEnvWarning
-            ? Colors.red.withOpacity(0.15)
-            : Colors.white.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(15),
-        border: _isEnvWarning
-            ? Border.all(color: Colors.redAccent.withOpacity(0.5))
-            : null,
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _envInfo(
-            Icons.light_mode,
-            "${_luxValue.toInt()} lx",
-            "Min 300",
-            lightAlert,
-          ),
-          _envInfo(
-            Icons.volume_up,
-            "${_dbValue.toInt()} dB",
-            "Max 60",
-            noiseAlert,
-          ),
-        ],
-      ),
-    );
+  Color _getNarrativeMainColor() {
+    switch (_currentCoreState) {
+      case FocusCoreState.workOptimal:
+        return Colors.cyanAccent;
+      case FocusCoreState.workSuboptimal:
+        return Colors.redAccent;
+      case FocusCoreState.breakNormal:
+        return Colors.orangeAccent;
+    }
   }
 
-  Widget _envInfo(IconData icon, String value, String label, bool isBad) {
-    return Column(
-      children: [
-        Icon(icon, size: 18, color: isBad ? Colors.redAccent : Colors.white38),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: isBad ? Colors.redAccent : Colors.white,
-          ),
-        ),
-        Text(label, style: TextStyle(fontSize: 10, color: Colors.white24)),
-      ],
-    );
-  }
-
-  Widget _buildCircularTimer(double progress) {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        SizedBox(
-          width: 260,
-          height: 260,
-          child: CircularProgressIndicator(
-            value: progress,
-            strokeWidth: 4,
-            backgroundColor: Colors.white10,
-            valueColor: AlwaysStoppedAnimation<Color>(
-              _isEnvWarning
-                  ? Colors.redAccent
-                  : (_isWorking ? Colors.tealAccent : Colors.orangeAccent),
-            ),
-          ),
-        ),
-        Text(
-          _formatTime(_secondsRemaining),
-          style: TextStyle(fontSize: 64, fontWeight: FontWeight.w100),
-        ),
-      ],
-    );
+  String _getNarrativeStatusText() {
+    switch (_currentCoreState) {
+      case FocusCoreState.workOptimal:
+        return "CHARGING PLANET";
+      case FocusCoreState.workSuboptimal:
+        return "ENERGY CRISIS!";
+      case FocusCoreState.breakNormal:
+        return "CORE STABLE (REST)";
+    }
   }
 
   Widget _buildControlButtons() {
@@ -450,9 +518,9 @@ class _PomodoroUIState extends State<PomodoroUI> {
         _actionBtn(
           _toggleTimer,
           _isRunning ? Icons.pause : Icons.play_arrow,
-          _isRunning ? Colors.white : Colors.tealAccent,
+          _isRunning ? Colors.white : Colors.cyanAccent,
         ),
-        SizedBox(width: 40),
+        const SizedBox(width: 40),
         _actionBtn(_resetTimer, Icons.refresh, Colors.white38),
       ],
     );
@@ -462,7 +530,7 @@ class _PomodoroUIState extends State<PomodoroUI> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           border: Border.all(color: color.withOpacity(0.5)),
@@ -471,21 +539,89 @@ class _PomodoroUIState extends State<PomodoroUI> {
       ),
     );
   }
+}
 
-  String _formatTime(int sec) {
-    return "${(sec ~/ 60).toString().padLeft(2, '0')}:${(sec % 60).toString().padLeft(2, '0')}";
+// ==========================================
+// 3. 高级自定义绘图 (CustomPainter)
+// ==========================================
+class FocusPlanetCorePainter extends CustomPainter {
+  final double progress;
+  final Color mainColor;
+  final FocusCoreState state;
+  final double warningFlickerValue;
+
+  FocusPlanetCorePainter({
+    required this.progress,
+    required this.mainColor,
+    required this.state,
+    required this.warningFlickerValue,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+
+    final Paint trackPaint = Paint()
+      ..color = Colors.white10
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    canvas.drawCircle(center, radius, trackPaint);
+
+    final double sweepAngle = 2 * math.pi * progress;
+    final double startAngle = -math.pi / 2;
+
+    final Paint progressPaint = Paint()
+      ..color = mainColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 10
+      ..strokeCap = StrokeCap.round;
+
+    if (state == FocusCoreState.workSuboptimal) {
+      progressPaint.color = Colors.redAccent.withOpacity(
+        0.5 + 0.5 * warningFlickerValue,
+      );
+    }
+
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      startAngle,
+      sweepAngle,
+      false,
+      progressPaint,
+    );
+
+    final double coreX = center.dx + radius * math.cos(startAngle + sweepAngle);
+    final double coreY = center.dy + radius * math.sin(startAngle + sweepAngle);
+
+    final Paint corePaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    final Paint coreGlowPaint = Paint()
+      ..color = mainColor.withOpacity(
+        state == FocusCoreState.workSuboptimal ? 0.8 : 0.4,
+      )
+      ..style = PaintingStyle.fill
+      ..maskFilter = MaskFilter.blur(
+        BlurStyle.normal,
+        state == FocusCoreState.workSuboptimal ? 15 : 6,
+      );
+
+    canvas.drawCircle(Offset(coreX, coreY), 15, coreGlowPaint);
+    canvas.drawCircle(Offset(coreX, coreY), 8, corePaint);
   }
 
   @override
-  void dispose() {
-    _timer?.cancel();
-    _stopMonitoring();
-    super.dispose();
+  bool shouldRepaint(covariant FocusPlanetCorePainter oldDelegate) {
+    return oldDelegate.progress != progress ||
+        oldDelegate.state != state ||
+        (state == FocusCoreState.workSuboptimal &&
+            oldDelegate.warningFlickerValue != warningFlickerValue);
   }
 }
 
 // ==========================================
-// 3. 传感器历史数据页面 (Sensor History Page)
+// 4. 传感器历史数据页面
 // ==========================================
 class SensorHistoryPage extends StatelessWidget {
   final List<EnvRecord> historyData;
@@ -500,27 +636,26 @@ class SensorHistoryPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 计算适合学习的比例
     int optimalCount = historyData.where((data) => data.isOptimal).length;
     double optimalPercentage = (optimalCount / historyData.length) * 100;
 
     return Scaffold(
+      backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
-        title: Text("Session History"),
-        backgroundColor: Color(0xFF1E3C72),
+        title: const Text("Core Charge History"),
+        backgroundColor: const Color(0xFF1E3C72),
       ),
       body: SingleChildScrollView(
-        padding: EdgeInsets.all(20),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 比例统计卡片
             Container(
-              padding: EdgeInsets.all(20),
+              padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.tealAccent.withOpacity(0.1),
+                color: Colors.cyanAccent.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(15),
-                border: Border.all(color: Colors.tealAccent.withOpacity(0.5)),
+                border: Border.all(color: Colors.cyanAccent.withOpacity(0.5)),
               ),
               child: Row(
                 children: [
@@ -533,13 +668,13 @@ class SensorHistoryPage extends StatelessWidget {
                         child: CircularProgressIndicator(
                           value: optimalPercentage / 100,
                           backgroundColor: Colors.white10,
-                          color: Colors.tealAccent,
+                          color: Colors.cyanAccent,
                           strokeWidth: 8,
                         ),
                       ),
                       Text(
                         "${optimalPercentage.toStringAsFixed(1)}%",
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                           color: Colors.white,
@@ -547,17 +682,17 @@ class SensorHistoryPage extends StatelessWidget {
                       ),
                     ],
                   ),
-                  SizedBox(width: 20),
+                  const SizedBox(width: 20),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
+                      children: const [
                         Text(
-                          "Optimal Study Time",
+                          "Stable Energy Flow",
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
-                            color: Colors.tealAccent,
+                            color: Colors.cyanAccent,
                           ),
                         ),
                         SizedBox(height: 5),
@@ -571,39 +706,43 @@ class SensorHistoryPage extends StatelessWidget {
                 ],
               ),
             ),
-            SizedBox(height: 30),
-
-            // 亮度折线图
-            Text(
+            const SizedBox(height: 30),
+            const Text(
               "Light History (Lux)",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
             ),
-            SizedBox(height: 10),
+            const SizedBox(height: 10),
             Container(
               height: 200,
-              padding: EdgeInsets.all(15),
+              padding: const EdgeInsets.all(15),
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.05),
                 borderRadius: BorderRadius.circular(15),
               ),
-              child: LineChart(_buildLightChart()),
+              child: LineChart(_buildChartData(true)),
             ),
-            SizedBox(height: 30),
-
-            // 噪音折线图
-            Text(
+            const SizedBox(height: 30),
+            const Text(
               "Noise History (dB)",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
             ),
-            SizedBox(height: 10),
+            const SizedBox(height: 10),
             Container(
               height: 200,
-              padding: EdgeInsets.all(15),
+              padding: const EdgeInsets.all(15),
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.05),
                 borderRadius: BorderRadius.circular(15),
               ),
-              child: LineChart(_buildNoiseChart()),
+              child: LineChart(_buildChartData(false)),
             ),
           ],
         ),
@@ -611,10 +750,12 @@ class SensorHistoryPage extends StatelessWidget {
     );
   }
 
-  LineChartData _buildLightChart() {
+  LineChartData _buildChartData(bool isLight) {
     List<FlSpot> spots = historyData
-        .map((d) => FlSpot(d.second.toDouble(), d.lux))
+        .map((d) => FlSpot(d.second.toDouble(), isLight ? d.lux : d.db))
         .toList();
+    Color chartColor = isLight ? Colors.yellowAccent : Colors.blueAccent;
+    double limit = isLight ? minLux : maxDb;
 
     return LineChartData(
       gridData: FlGridData(show: false),
@@ -630,72 +771,26 @@ class SensorHistoryPage extends StatelessWidget {
         LineChartBarData(
           spots: spots,
           isCurved: true,
-          color: Colors.yellowAccent,
+          color: chartColor,
           barWidth: 3,
           isStrokeCapRound: true,
           dotData: FlDotData(show: false),
           belowBarData: BarAreaData(
             show: true,
-            color: Colors.yellowAccent.withOpacity(0.2),
+            color: chartColor.withOpacity(0.2),
           ),
         ),
       ],
       extraLinesData: ExtraLinesData(
         horizontalLines: [
           HorizontalLine(
-            y: minLux,
+            y: limit,
             color: Colors.redAccent,
             strokeWidth: 1,
             dashArray: [5, 5],
             label: HorizontalLineLabel(
               show: true,
-              labelResolver: (line) => 'Min 300',
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  LineChartData _buildNoiseChart() {
-    List<FlSpot> spots = historyData
-        .map((d) => FlSpot(d.second.toDouble(), d.db))
-        .toList();
-
-    return LineChartData(
-      gridData: FlGridData(show: false),
-      titlesData: FlTitlesData(
-        rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        bottomTitles: AxisTitles(
-          sideTitles: SideTitles(showTitles: true, reservedSize: 22),
-        ),
-      ),
-      borderData: FlBorderData(show: false),
-      lineBarsData: [
-        LineChartBarData(
-          spots: spots,
-          isCurved: true,
-          color: Colors.blueAccent,
-          barWidth: 3,
-          isStrokeCapRound: true,
-          dotData: FlDotData(show: false),
-          belowBarData: BarAreaData(
-            show: true,
-            color: Colors.blueAccent.withOpacity(0.2),
-          ),
-        ),
-      ],
-      extraLinesData: ExtraLinesData(
-        horizontalLines: [
-          HorizontalLine(
-            y: maxDb,
-            color: Colors.redAccent,
-            strokeWidth: 1,
-            dashArray: [5, 5],
-            label: HorizontalLineLabel(
-              show: true,
-              labelResolver: (line) => 'Max 60',
+              labelResolver: (line) => isLight ? 'Min 300' : 'Max 60',
             ),
           ),
         ],
