@@ -5,8 +5,17 @@ import 'package:light/light.dart';
 import 'package:noise_meter/noise_meter.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-void main() {
+// 【修改】将全局常量提取出来，方便图表页面也能使用
+const double MIN_LUX = 300.0;
+const double MAX_DB = 60.0;
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+
   runApp(
     MaterialApp(
       debugShowCheckedModeBanner: false,
@@ -95,7 +104,6 @@ class PomodoroUI extends StatefulWidget {
 }
 
 class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
-  // --- 基础配置 (已还原您可以修改的设置) ---
   int _workMinutes = 25;
   int _breakMinutes = 5;
   int _totalSessions = 4;
@@ -106,13 +114,10 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
   bool _isRunning = false;
   Timer? _timer;
 
-  // --- 传感器监测 ---
   double _luxValue = 0;
   double _dbValue = 0;
   int _violationSeconds = 0;
   bool _isEnvWarning = false;
-  static const double MIN_LUX = 300.0;
-  static const double MAX_DB = 60.0;
 
   StreamSubscription? _lightSubscription;
   StreamSubscription<NoiseReading>? _noiseSubscription;
@@ -120,7 +125,6 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
 
   List<EnvRecord> _currentSessionHistory = [];
 
-  // --- 动画控制器 ---
   late AnimationController _breathingController;
   late Animation<double> _breathingAnimation;
   late AnimationController _rotationController;
@@ -287,19 +291,66 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
     _updateCoreNarrativeExperience();
   }
 
-  void _handleSessionEnd() {
+  Future<void> _uploadSessionToCloud() async {
+    if (_currentSessionHistory.isEmpty) return;
+
+    double totalLux = 0;
+    double totalDb = 0;
+    int optimalCount = 0;
+
+    // 【新增】将每一秒的数据转换为 Firebase 可以存储的 Map 列表
+    List<Map<String, dynamic>> rawDataList = [];
+
+    for (var record in _currentSessionHistory) {
+      totalLux += record.lux;
+      totalDb += record.db;
+      if (record.isOptimal) optimalCount++;
+
+      // 收集图表所需的原始坐标数据
+      rawDataList.add({
+        'second': record.second,
+        'lux': record.lux,
+        'db': record.db,
+        'isOptimal': record.isOptimal,
+      });
+    }
+
+    int count = _currentSessionHistory.length;
+    double avgLux = totalLux / count;
+    double avgDb = totalDb / count;
+    double optimalPercentage = (optimalCount / count) * 100;
+
+    try {
+      await FirebaseFirestore.instance.collection('focus_sessions').add({
+        'timestamp': FieldValue.serverTimestamp(),
+        'durationMinutes': _workMinutes,
+        'avgLux': avgLux,
+        'avgDb': avgDb,
+        'optimalPercentage': optimalPercentage,
+        'rawHistory': rawDataList, // 【新增】将画折线图的数据也传上云端
+      });
+      debugPrint("Data successfully uploaded to Firebase!");
+    } catch (e) {
+      debugPrint("Error uploading to Firebase: $e");
+    }
+  }
+
+  void _handleSessionEnd() async {
     _timer?.cancel();
     _stopMonitoring();
     setState(() => _isRunning = false);
 
     if (_isWorking) {
+      _showSnackBar("Uploading session data to cloud...");
+      await _uploadSessionToCloud();
+
       _completedSessions++;
       if (_completedSessions < _totalSessions) {
         _isWorking = false;
         _secondsRemaining = _breakMinutes * 60;
-        _showSnackBar("Planet Core Charged! Time for a break.");
+        _showSnackBar("Data Saved! Planet Core Charged! Time for a break.");
       } else {
-        _showSnackBar("Goal Achieved! Core fully powered!");
+        _showSnackBar("Goal Achieved! Core fully powered & Data Synced!");
         _resetTimer();
         return;
       }
@@ -349,9 +400,6 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  // ==========================================
-  // 【新增】还原：弹出式设置面板
-  // ==========================================
   void _showSettingsSheet() {
     showModalBottomSheet(
       context: context,
@@ -423,7 +471,7 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
                   Icons.remove_circle_outline,
                   color: Colors.cyanAccent,
                 ),
-                onPressed: () => onChanged(math.max(1, value - 1)), // 防止设为负数或0
+                onPressed: () => onChanged(math.max(1, value - 1)),
               ),
               SizedBox(
                 width: 30,
@@ -452,9 +500,6 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
     );
   }
 
-  // ==========================================
-  // UI 构建
-  // ==========================================
   @override
   Widget build(BuildContext context) {
     double total = _isWorking ? _workMinutes * 60 : _breakMinutes * 60;
@@ -466,28 +511,18 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.settings, color: Colors.white70), // 【新增】设置按钮
+          icon: const Icon(Icons.settings, color: Colors.white70),
           tooltip: "Adjust Times",
           onPressed: _showSettingsSheet,
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.analytics, color: Colors.cyanAccent),
-            tooltip: "View Session History",
+            icon: const Icon(Icons.cloud_sync, color: Colors.cyanAccent),
+            tooltip: "View Cloud History",
             onPressed: () {
-              if (_currentSessionHistory.isEmpty) {
-                _showSnackBar("No data collected yet. Start focusing!");
-                return;
-              }
               Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (context) => SensorHistoryPage(
-                    historyData: _currentSessionHistory,
-                    minLux: MIN_LUX,
-                    maxDb: MAX_DB,
-                  ),
-                ),
+                MaterialPageRoute(builder: (context) => CloudHistoryPage()),
               );
             },
           ),
@@ -496,7 +531,6 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
       body: SafeArea(
         child: Column(
           children: [
-            // 进度圆环区域
             Expanded(
               child: Stack(
                 alignment: Alignment.center,
@@ -570,11 +604,9 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
               ),
             ),
 
-            // 【新增】还原：实时传感器数据展示
             _buildRealTimeSensors(),
             const SizedBox(height: 30),
 
-            // 控制按钮
             _buildControlButtons(),
             const SizedBox(height: 30),
           ],
@@ -583,7 +615,6 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
     );
   }
 
-  // 【新增】实时传感器数据显示挂件
   Widget _buildRealTimeSensors() {
     bool lightWarning = _luxValue < MIN_LUX && _isWorking && _isRunning;
     bool noiseWarning = _dbValue > MAX_DB && _isWorking && _isRunning;
@@ -598,7 +629,6 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
     );
   }
 
-  // 传感器胶囊 UI
   Widget _sensorBadge(IconData icon, String value, bool isWarning) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
@@ -763,6 +793,9 @@ class FocusPlanetCorePainter extends CustomPainter {
   }
 }
 
+// ==========================================
+// 历史图表页面：复用代码展示云端拉取的详情
+// ==========================================
 class SensorHistoryPage extends StatelessWidget {
   final List<EnvRecord> historyData;
   final double minLux;
@@ -777,12 +810,14 @@ class SensorHistoryPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     int optimalCount = historyData.where((data) => data.isOptimal).length;
-    double optimalPercentage = (optimalCount / historyData.length) * 100;
+    double optimalPercentage = historyData.isEmpty
+        ? 0
+        : (optimalCount / historyData.length) * 100;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
-        title: const Text("Core Charge History"),
+        title: const Text("Session Detail Chart"),
         backgroundColor: const Color(0xFF1E3C72),
       ),
       body: SingleChildScrollView(
@@ -891,6 +926,7 @@ class SensorHistoryPage extends StatelessWidget {
   }
 
   LineChartData _buildChartData(bool isLight) {
+    if (historyData.isEmpty) return LineChartData(); // 防御空数据
     List<FlSpot> spots = historyData
         .map((d) => FlSpot(d.second.toDouble(), isLight ? d.lux : d.db))
         .toList();
@@ -934,6 +970,223 @@ class SensorHistoryPage extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ==========================================
+// 云端历史记录页面
+// ==========================================
+class CloudHistoryPage extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0F172A),
+      appBar: AppBar(
+        title: const Text("Cloud Session History"),
+        backgroundColor: const Color(0xFF1E3C72),
+        actions: const [
+          Padding(
+            padding: EdgeInsets.only(right: 16.0),
+            child: Icon(Icons.cloud_done, color: Colors.cyanAccent),
+          ),
+        ],
+      ),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('focus_sessions')
+            .orderBy('timestamp', descending: true)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(color: Colors.cyanAccent),
+            );
+          }
+          if (snapshot.hasError) {
+            return Center(
+              child: Text(
+                "Error fetching data: ${snapshot.error}",
+                style: const TextStyle(color: Colors.redAccent),
+              ),
+            );
+          }
+          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+            return const Center(
+              child: Text(
+                "No cloud records yet. Finish a session to upload!",
+                style: TextStyle(color: Colors.white70, fontSize: 16),
+              ),
+            );
+          }
+
+          final sessions = snapshot.data!.docs;
+
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: sessions.length,
+            itemBuilder: (context, index) {
+              var data = sessions[index].data() as Map<String, dynamic>;
+
+              double optimalPct = data['optimalPercentage'] ?? 0.0;
+              double avgLux = data['avgLux'] ?? 0.0;
+              double avgDb = data['avgDb'] ?? 0.0;
+              int duration = data['durationMinutes'] ?? 0;
+
+              String timeString = "Unknown Time";
+              if (data['timestamp'] != null) {
+                DateTime dt = (data['timestamp'] as Timestamp).toDate();
+                timeString =
+                    "${dt.month}/${dt.day}  ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
+              }
+
+              Color scoreColor = optimalPct > 80
+                  ? Colors.cyanAccent
+                  : (optimalPct > 50 ? Colors.orangeAccent : Colors.redAccent);
+
+              // 【修改】添加 GestureDetector，让卡片可点击
+              return GestureDetector(
+                onTap: () {
+                  // 判断这条记录里有没有包含图表所需的原始数据（兼容您旧的测试数据）
+                  if (data['rawHistory'] != null) {
+                    List<dynamic> rawList = data['rawHistory'];
+                    // 把云端的动态列表还原成我们的 EnvRecord 对象列表
+                    List<EnvRecord> historyList = rawList
+                        .map(
+                          (e) => EnvRecord(
+                            second: e['second'] ?? 0,
+                            lux: (e['lux'] ?? 0).toDouble(),
+                            db: (e['db'] ?? 0).toDouble(),
+                            isOptimal: e['isOptimal'] ?? false,
+                          ),
+                        )
+                        .toList();
+
+                    // 跳转到图表详情页，并把云端的数据传过去
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => SensorHistoryPage(
+                          historyData: historyList,
+                          minLux: MIN_LUX,
+                          maxDb: MAX_DB,
+                        ),
+                      ),
+                    );
+                  } else {
+                    // 如果点击的是我们修改代码前测试的老数据（没有 rawHistory），则提示用户
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          "No detailed chart data available for this older session.",
+                        ),
+                      ),
+                    );
+                  }
+                },
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(15),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: Row(
+                    children: [
+                      Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          SizedBox(
+                            height: 60,
+                            width: 60,
+                            child: CircularProgressIndicator(
+                              value: optimalPct / 100,
+                              backgroundColor: Colors.white10,
+                              color: scoreColor,
+                              strokeWidth: 6,
+                            ),
+                          ),
+                          Text(
+                            "${optimalPct.toInt()}%",
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: scoreColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(width: 20),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  "$duration Min Session",
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                Text(
+                                  timeString,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.white54,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.light_mode,
+                                  size: 14,
+                                  color: Colors.yellowAccent.withOpacity(0.8),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  "Avg ${avgLux.toInt()} lx",
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                const SizedBox(width: 15),
+                                Icon(
+                                  Icons.volume_up,
+                                  size: 14,
+                                  color: Colors.blueAccent.withOpacity(0.8),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  "Avg ${avgDb.toInt()} dB",
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      // 在卡片最右侧加一个箭头，提示用户这是可以点击的
+                      const Icon(Icons.chevron_right, color: Colors.white38),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "361075704650",
+    "project_id": "focussphere-8030c",
+    "storage_bucket": "focussphere-8030c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:361075704650:android:f346c09213e4da982ef7b3",
+        "android_client_info": {
+          "package_name": "com.example.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD4uuLnr6RNCl6Inus7hmdj2rkgyv3QTAg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
