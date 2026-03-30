@@ -38,6 +38,7 @@ dependencies:
   light: ^5.0.0        # 光线传感器
   noise_meter: ^5.1.0  # 噪音监测
   permission_handler: ^12.0.1 # 权限申请
+  fl_chart: ^0.65.0 # 图表库
 
 dev_dependencies:
   flutter_test:
