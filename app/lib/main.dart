@@ -296,13 +296,13 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
     double totalLux = 0;
     double totalDb = 0;
     int optimalCount = 0;
-
     List<Map<String, dynamic>> rawDataList = [];
 
     for (var record in _currentSessionHistory) {
       totalLux += record.lux;
       totalDb += record.db;
       if (record.isOptimal) optimalCount++;
+
       rawDataList.add({
         'second': record.second,
         'lux': record.lux,
@@ -325,10 +325,77 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
         'optimalPercentage': optimalPercentage,
         'rawHistory': rawDataList,
       });
-      debugPrint("Data successfully uploaded to Firebase!");
     } catch (e) {
       debugPrint("Error uploading to Firebase: $e");
     }
+  }
+
+  void _showCongratsDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: const Color(0xFF1E3C72),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(30.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.stars, color: Colors.cyanAccent, size: 80),
+                const SizedBox(height: 20),
+                const Text(
+                  "Goal Achieved!",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 15),
+                Text(
+                  "Incredible work! You have successfully completed all $_totalSessions focus sessions and fully charged the Focus Planet.",
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 16,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 30),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.cyanAccent,
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                    ),
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                    },
+                    child: const Text(
+                      "AWESOME",
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _handleSessionEnd() async {
@@ -346,7 +413,7 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
         _secondsRemaining = _breakMinutes * 60;
         _showSnackBar("Data Saved! Planet Core Charged! Time for a break.");
       } else {
-        _showSnackBar("Goal Achieved! Core fully powered & Data Synced!");
+        _showCongratsDialog();
         _resetTimer();
         return;
       }
@@ -592,6 +659,14 @@ class _PomodoroUIState extends State<PomodoroUI> with TickerProviderStateMixin {
                         style: const TextStyle(
                           fontSize: 60,
                           fontWeight: FontWeight.w100,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        "SESSION $_completedSessions / $_totalSessions",
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.white38,
                         ),
                       ),
                     ],
@@ -973,11 +1048,9 @@ class CloudHistoryPage extends StatelessWidget {
     try {
       var collection = FirebaseFirestore.instance.collection('focus_sessions');
       var snapshots = await collection.get();
-
       for (var doc in snapshots.docs) {
         await doc.reference.delete();
       }
-
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1052,19 +1125,17 @@ class CloudHistoryPage extends StatelessWidget {
             .orderBy('timestamp', descending: true)
             .snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          if (snapshot.connectionState == ConnectionState.waiting)
             return const Center(
               child: CircularProgressIndicator(color: Colors.cyanAccent),
             );
-          }
-          if (snapshot.hasError) {
+          if (snapshot.hasError)
             return Center(
               child: Text(
                 "Error fetching data: ${snapshot.error}",
                 style: const TextStyle(color: Colors.redAccent),
               ),
             );
-          }
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
             return const Center(
               child: Text(
@@ -1081,7 +1152,6 @@ class CloudHistoryPage extends StatelessWidget {
             itemCount: sessions.length,
             itemBuilder: (context, index) {
               var data = sessions[index].data() as Map<String, dynamic>;
-
               double optimalPct = data['optimalPercentage'] ?? 0.0;
               double avgLux = data['avgLux'] ?? 0.0;
               double avgDb = data['avgDb'] ?? 0.0;
@@ -1112,7 +1182,6 @@ class CloudHistoryPage extends StatelessWidget {
                           ),
                         )
                         .toList();
-
                     Navigator.push(
                       context,
                       MaterialPageRoute(
