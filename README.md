@@ -22,18 +22,16 @@ Focus Sphere gamifies your study sessions. Your goal is to "charge the Focus Pla
 #### Core Experience
 | Splash Screen | Main Timer (Optimal) | Energy Crisis Warning |
 | :---: | :---: | :---: |
-| ![Splash](https://github.com/user-attachments/assets/68856144-c97e-4c5b-8d9d-536ae61d19a1)| ![Main UI](https://github.com/user-attachments/assets/467a1ae9-6688-4821-b9f9-5bc0d07d99d1)| ![Warning UI](https://github.com/user-attachments/assets/3cd96826-d174-42af-8b28-0dc00327edfd)|
+| <img src="https://github.com/user-attachments/assets/68856144-c97e-4c5b-8d9d-536ae61d19a1" width="220">| <img src="https://github.com/user-attachments/assets/467a1ae9-6688-4821-b9f9-5bc0d07d99d1" width="220">| <img src="https://github.com/user-attachments/assets/3cd96826-d174-42af-8b28-0dc00327edfd" width="220">|
 
 #### Settings & Cloud Data
 | Settings Panel | Cloud History | Session Chart Detail |
 | :---: | :---: | :---: |
-| ![Settings](https://github.com/user-attachments/assets/6fa8cd39-3314-493c-9bc0-62e3c7935a85)| ![Cloud History](https://github.com/user-attachments/assets/be6b8bc0-bfa7-485d-be27-b600b697afb8)| ![Chart Detail](https://github.com/user-attachments/assets/a2964f7a-e537-4504-a108-37e9448b80de)|
+| <img src="https://github.com/user-attachments/assets/6fa8cd39-3314-493c-9bc0-62e3c7935a85" width="220">| <img src="https://github.com/user-attachments/assets/be6b8bc0-bfa7-485d-be27-b600b697afb8" width="220">| <img src="https://github.com/user-attachments/assets/a2964f7a-e537-4504-a108-37e9448b80de" width="220">|
 
 🎥 **[Watch the full presentation & demo video here](https://youtube.com/shorts/Byi8CcJfj7c)**
 
 🌐 **[Visit the Promotional Landing Page (GitHub Pages)](https://github.com/virtuosa0714/casa0015-mobile-assessment)**
-
----
 
 ---
 
