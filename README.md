@@ -63,10 +63,6 @@ The right half of the conceptual board above outlines the UML-style functional u
 
 ---
 
-
-
-
-
 ## 🛠️ Built With (Frameworks & Plugins)
 
 This application is built entirely in **Flutter** & **Dart**.
