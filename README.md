@@ -33,7 +33,7 @@ Focus Sphere gamifies your study sessions. Your goal is to "charge the Focus Pla
 
 🎥 **[Watch the full presentation & demo video here](https://youtube.com/shorts/Byi8CcJfj7c)**
 
-🌐 **[Visit the Promotional Landing Page (GitHub Pages)](https://github.com/virtuosa0714/casa0015-mobile-assessment)**
+🌐 **[Visit the Promotional Landing Page (GitHub Pages)](https://virtuosa0714.github.io/casa0015-mobile-assessment/)**
 
 ---
 
