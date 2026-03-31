@@ -1,23 +1,77 @@
-# REPLACE WITH YOUR APP NAME
+# Focus Sphere 🌍⏱️
 
-This is the Final assessment template for CASA0014 - Please use this template and edit the relevant sections to personalise.
-This section has a short introduction to what the application is
+Welcome to **Focus Sphere**, a gamified Pomodoro productivity application developed for the **CASA0015 - Mobile Systems & Interactions** module. 
 
-## Use this README File 
+Focus Sphere goes beyond traditional time management by intelligently monitoring your physical surroundings. By utilizing your device's onboard sensors (Light and Microphone), the app ensures you are studying in an optimal environment, bridging the gap between digital focus and the physical **Connected Environment**.
 
-Use this section to show us what your Mobile App is about.   Include a Screenshot to the App, link to the various frameworks you've used. Include your presentation video here that shows off your Mobile App.   Emojis are also fun to include 📱 😄
+## 📱 About The App
 
-Look at some other Flutter Apps online and see how they use there README File.  Good examples are:
+**Tagline**: *Monitor. Focus. Connect.*
 
-- https://github.com/miickel/flutter_particle_clock
-- https://github.com/Tarikul711/flutter-food-delivery-app-ui    
-- https://github.com/mohak1283/Instagram-Clone
+Focus Sphere gamifies your study sessions. Your goal is to "charge the Focus Planet Core" by maintaining focus. However, if the environment becomes too loud (>60 dB) or too dim (<300 Lux), an "Energy Crisis" is triggered, visually prompting you to improve your surroundings. 
 
+### ✨ Key Features
+* **Gamified Pomodoro Timer**: Custom-painted UI with breathing and rotation animations that react to your current state and environmental health.
+* **Real-time Environmental Monitoring**: Uses device light sensors and microphones to constantly track Lux and dB levels.
+* **Cloud Session History**: Seamlessly integrates with **Firebase Cloud Firestore** to upload and store your study reports.
+* **Data Visualization**: Detailed, interactive line charts built with `fl_chart` to review the environmental data of past cloud sessions.
 
-## Include A Section That Tells Developers How To Install The App
+### 🖼️ Screenshots & Demo
+> **Note to user:** Add your image/video links below. You can drag and drop images directly into GitHub's editor to get the links.
 
-Include a section that gives intructions on how to install the app or run it in Flutter.  What versions of the plugins are you assuming?  Maybe define a licence
+#### Core Experience
+| Splash Screen | Main Timer (Optimal) | Energy Crisis Warning |
+| :---: | :---: | :---: |
+| ![Splash](https://github.com/user-attachments/assets/68856144-c97e-4c5b-8d9d-536ae61d19a1)| ![Main UI](https://github.com/user-attachments/assets/467a1ae9-6688-4821-b9f9-5bc0d07d99d1)| ![Warning UI](https://github.com/user-attachments/assets/3cd96826-d174-42af-8b28-0dc00327edfd)|
 
-##  Contact Details
+#### Settings & Cloud Data
+| Settings Panel | Cloud History | Session Chart Detail |
+| :---: | :---: | :---: |
+| ![Settings](https://github.com/user-attachments/assets/6fa8cd39-3314-493c-9bc0-62e3c7935a85)| ![Cloud History](https://github.com/user-attachments/assets/be6b8bc0-bfa7-485d-be27-b600b697afb8)| ![Chart Detail](https://github.com/user-attachments/assets/a2964f7a-e537-4504-a108-37e9448b80de)|
 
-Having Contact Details is also good as it shows people how to get in contact with you if they'd like to contribute to the app. 
+🎥 **[Watch the full presentation & demo video here]([INSERT_YOUTUBE_OR_VIMEO_LINK_HERE])**
+
+🌐 **[Visit the Promotional Landing Page (GitHub Pages)](https://github.com/virtuosa0714/casa0015-mobile-assessment)**
+
+---
+
+## 🛠️ Built With (Frameworks & Plugins)
+
+This application is built entirely in **Flutter** & **Dart**.
+
+* [Flutter](https://flutter.dev/) - UI Toolkit
+* [Firebase Core & Cloud Firestore](https://firebase.google.com/docs/firestore) - Cloud Database & API
+* [fl_chart](https://pub.dev/packages/fl_chart) - Advanced Data Visualization
+* [light](https://pub.dev/packages/light) - Ambient Light Sensor Plugin
+* [noise_meter](https://pub.dev/packages/noise_meter) - Audio/Noise Level Plugin
+* [permission_handler](https://pub.dev/packages/permission_handler) - Cross-platform permission management
+
+---
+
+## ⚙️ How To Install & Run
+
+Follow these instructions to get a copy of the project up and running on your local machine for development and testing purposes.
+
+### Prerequisites
+* Flutter SDK (Version 3.16 or higher recommended)
+* Android Studio or VS Code with Flutter extensions
+* A physical Android/iOS device is **highly recommended** as emulators do not support real-time light/noise sensor inputs.
+
+### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/virtuosa0714/casa0015-mobile-assessment
+
+2.**Navigate to the project directory**
+cd app
+
+3.**Install Dependencies**
+flutter pub get
+
+4.**Firebase Configuration (Important⚠️)**
+Because this app uses Firebase Firestore for cloud syncing, you must have a valid google-services.json file.
+Place your google-services.json file inside the android/app/ directory.
+
+5.**Run the Application**
+flutter run
