@@ -29,7 +29,7 @@ Focus Sphere gamifies your study sessions. Your goal is to "charge the Focus Pla
 | :---: | :---: | :---: |
 | ![Settings](https://github.com/user-attachments/assets/6fa8cd39-3314-493c-9bc0-62e3c7935a85)| ![Cloud History](https://github.com/user-attachments/assets/be6b8bc0-bfa7-485d-be27-b600b697afb8)| ![Chart Detail](https://github.com/user-attachments/assets/a2964f7a-e537-4504-a108-37e9448b80de)|
 
-🎥 **[Watch the full presentation & demo video here]([INSERT_YOUTUBE_OR_VIMEO_LINK_HERE])**
+🎥 **[Watch the full presentation & demo video here](https://youtube.com/shorts/Byi8CcJfj7c)**
 
 🌐 **[Visit the Promotional Landing Page (GitHub Pages)](https://github.com/virtuosa0714/casa0015-mobile-assessment)**
 
@@ -60,18 +60,17 @@ Follow these instructions to get a copy of the project up and running on your lo
 ### Installation
 
 1. **Clone the repository**
-   ```bash
    git clone https://github.com/virtuosa0714/casa0015-mobile-assessment
 
 2.**Navigate to the project directory**
-cd app
+   cd app
 
 3.**Install Dependencies**
-flutter pub get
+   flutter pub get
 
 4.**Firebase Configuration (Important⚠️)**
-Because this app uses Firebase Firestore for cloud syncing, you must have a valid google-services.json file.
+   Because this app uses Firebase Firestore for cloud syncing, you must have a valid google-services.json file.
 Place your google-services.json file inside the android/app/ directory.
 
 5.**Run the Application**
-flutter run
+   flutter run
