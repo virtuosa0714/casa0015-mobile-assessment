@@ -35,6 +35,38 @@ Focus Sphere gamifies your study sessions. Your goal is to "charge the Focus Pla
 
 ---
 
+---
+
+## 🎨 Design Evolution & Functionality
+
+This section details the initial conceptual design and systemic functionality of **Focus Sphere**, bridging the 'Connected Environment' sensor data with a narrative-driven user experience.
+
+### Conceptual Storyboard (Design Evolution)
+
+The image below displays the theoretical storyboard that guided the gamified narrative flow. It maps out the key visual states and user interactions:
+
+* **Optimal Focus**: The core narrative centers on 'Charging the Focus Planet' with professional, breathing cyan UI.
+* **Energy Crisis**: Utilizing device sensors, if the environment becomes suboptimal (dim/loud), the UI **immediately transitions** to a flashing red 'CRISIS' state. This visual feedback loop directly connects the physical world to the gamified digital narrative.
+* **Data Closure**: The flow concludes with a permanent, cloud-synced record, accessible via interactive fl_chart details.
+
+| Storyboard & Use Cases Conceptual Board |
+| :---: |
+| ![Storyboard & Use Cases Concept](https://github.com/user-attachments/assets/33dfec64-f79c-45c6-9776-ea6a3b984b11)|
+
+### Functional Use Case Diagram (System Interactions)
+
+The right half of the conceptual board above outlines the UML-style functional use cases, demonstrating the complex interactions between the **Actor (User, Physical Sensors, Firebase)** and the **System**:
+
+* **Actors**: Clearly defined User, Physical Sensors (Light/Sound), and Firebase Cloud Firestore actors.
+* **Core Systems**: Focuses on interactions with core modules: Sensor Monitoring (connected environment), Pomodoro Loop, and Cloud API services.
+* **Key Cloud Use Cases**: Specifically demonstrates user capability to 'Upload Session Report to Cloud' and 'Delete Cloud History', satisfying all requirements for robust API and service integration (Firebase).
+
+---
+
+
+
+
+
 ## 🛠️ Built With (Frameworks & Plugins)
 
 This application is built entirely in **Flutter** & **Dart**.
